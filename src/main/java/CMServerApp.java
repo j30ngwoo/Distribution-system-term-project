@@ -1,9 +1,11 @@
 import kr.ac.konkuk.ccslab.cm.manager.CMCommManager;
 import kr.ac.konkuk.ccslab.cm.stub.CMServerStub;
-
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.attribute.BasicFileAttributeView;
 import java.util.List;
 
 public class CMServerApp {
@@ -26,21 +28,16 @@ public class CMServerApp {
     }
 
     public void startCM() {
-        String strSavedServerAddress = null;
         List<String> localAddressList = null;
-        int nSavedServerPort = -1;
-
         localAddressList = CMCommManager.getLocalIPList();
         if (localAddressList == null) {
             System.err.println("Local address not found!");
             return;
         }
-        strSavedServerAddress = m_serverStub.getServerAddress();
-        nSavedServerPort = m_serverStub.getServerPort();
 
         System.out.println("my current address: " + localAddressList.get(0).toString());
-        System.out.println("saved server address: " + strSavedServerAddress);
-        System.out.println("saved server port: " + nSavedServerPort);
+        System.out.println("saved server address: " + m_serverStub.getServerAddress());
+        System.out.println("saved server port: " + m_serverStub.getServerPort());
 
         boolean bRet = m_serverStub.startCM();
         if (!bRet) {
@@ -78,6 +75,8 @@ public class CMServerApp {
                 case 999:
                     terminateCM();
                     return;
+                case 1:
+                    test();
                 default:
                     System.err.println("Unknown command.");
                     break;
@@ -89,6 +88,10 @@ public class CMServerApp {
         } catch (IOException e) {
             e.printStackTrace();
         }
+    }
+    private void test()
+    {
+        System.out.println(Files.getFileAttributeView(Path.of(".\\1\\hello"), BasicFileAttributeView.class));
     }
 
     public void printAllMenus()

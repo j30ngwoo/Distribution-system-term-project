@@ -4,7 +4,6 @@ import kr.ac.konkuk.ccslab.cm.event.CMSessionEvent;
 import kr.ac.konkuk.ccslab.cm.event.handler.CMAppEventHandler;
 import kr.ac.konkuk.ccslab.cm.info.CMConfigurationInfo;
 import kr.ac.konkuk.ccslab.cm.info.CMInfo;
-import kr.ac.konkuk.ccslab.cm.manager.CMDBManager;
 import kr.ac.konkuk.ccslab.cm.stub.CMServerStub;
 
 public class CMServerEventHandler implements CMAppEventHandler {

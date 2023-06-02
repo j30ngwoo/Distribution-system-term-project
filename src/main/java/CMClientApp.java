@@ -1,21 +1,26 @@
-import kr.ac.konkuk.ccslab.cm.event.CMSessionEvent;
 import kr.ac.konkuk.ccslab.cm.info.CMInfo;
 import kr.ac.konkuk.ccslab.cm.manager.CMCommManager;
 import kr.ac.konkuk.ccslab.cm.stub.CMClientStub;
-
 import javax.swing.*;
+import java.awt.*;
+import java.awt.event.*;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.attribute.BasicFileAttributeView;
 import java.util.List;
-import java.util.Scanner;
 
-public class CMClientApp {
+public class CMClientApp extends JFrame{
     private static CMClientStub m_clientStub;
     private CMClientEventHandler m_eventHandler;
     private boolean m_bRun;
     private String strFilePath = null;
+    public JFrame clientFrame = new JFrame();
+    private JTextArea clientConsole = new JTextArea(40, 40);
     public static final String R = "\u001B[0m";
     public static final String G = "\u001B[32m";
     public static final String Y = "\u001B[33m";
@@ -24,7 +29,7 @@ public class CMClientApp {
 
     public CMClientApp() {
         m_clientStub = new CMClientStub();
-        m_eventHandler = new CMClientEventHandler(m_clientStub);
+        m_eventHandler = new CMClientEventHandler(m_clientStub, clientConsole);
         m_bRun = true;
     }
 
@@ -36,45 +41,77 @@ public class CMClientApp {
         return m_eventHandler;
     }
 
-    public void StartCM() {
-        // get local address
-        List<String> localAddressList = CMCommManager.getLocalIPList();
-        if (localAddressList == null) {
-            System.err.println("Local address not found!");
-            return;
-        }
+    public void setGUI() {
+        clientConsole.setBackground(Color.WHITE);
+        clientConsole.setEditable(false);
+        add(new JScrollPane(clientConsole));
 
+        JButton loginButton = new JButton("Login/Logout");
+        loginButton.addActionListener(new ActionListener() {
+            public void actionPerformed(ActionEvent e) {
+                if (m_clientStub.getMyself().getState() != CMInfo.CM_SESSION_JOIN)
+                    loginDS();
+                else
+                    logoutDS();
+            }
+        });
+        add(loginButton);
+
+        JButton pushButton = new JButton("pushFile");
+        pushButton.addActionListener(new ActionListener() {
+            public void actionPerformed(ActionEvent e) {
+                pushFile();
+            }
+        });
+        add(pushButton);
+
+        JButton syncButton = new JButton("syncFile");
+        add(syncButton);
+
+        JButton shareButton = new JButton("shareFile");
+        add(shareButton);
+
+
+        setLayout(new FlowLayout());
+        setTitle("Client");
+        setSize(500, 740);
+        setLocation(300, 100);
+        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        setVisible(true);
+    }
+    public void startCM() {
+        setGUI();
+        List<String> localAddressList = CMCommManager.getLocalIPList();
         String strCurrentLocalAddress = localAddressList.get(0).toString();
         String strSavedServerAddress = null;
         int nSavedServerPort = -1;
 
-        strSavedServerAddress = m_clientStub.getServerAddress();
-        nSavedServerPort = m_clientStub.getServerPort();
-
         BufferedReader br = new BufferedReader(new InputStreamReader(System.in));
         System.out.println(G + "# start CM");
         System.out.println(Y + "my current address: " + R + strCurrentLocalAddress);
-        System.out.println(Y + "saved server address: " + R + strSavedServerAddress);
-        System.out.println(Y + "saved server port: " + R + nSavedServerPort);
+        System.out.println(Y + "saved server address: " + R + m_clientStub.getServerAddress());
+        System.out.println(Y + "saved server port: " + R + m_clientStub.getServerPort());
+        clientConsole.append("# start CM\n");
+        clientConsole.append("my current address: " + strCurrentLocalAddress + "\n");
+        clientConsole.append("saved server address: " + m_clientStub.getServerAddress() + "\n");
+        clientConsole.append("saved server port: " + m_clientStub.getServerPort() + "\n");
+        clientConsole.append("======\n");
 
         boolean bRet = m_clientStub.startCM();
         if (!bRet) {
             System.err.println("CM initialization error!");
+            clientConsole.append("CM initialization error!\n");
             return;
         }
-        startClient();
+        //startClient();
     }
 
     public void startClient() {
         System.out.println(G + "client application starts." + R);
         BufferedReader br = new BufferedReader(new InputStreamReader(System.in));
         String strInput = null;
-        // int nCommand = -1;
-
-        String defaultFilePath = null;
 
         while (m_bRun) {
-            System.out.println(G + "Type [menu] to view the menu." + R);
 
             try {
                 strInput = br.readLine();
@@ -106,7 +143,7 @@ public class CMClientApp {
                     checkFilePath();
                     break;
                 case "setfilepath":
-                    setFilePath();
+                    newClientFilePath();
                     break;
                 case "pushfile":
                     pushFile();
@@ -121,6 +158,7 @@ public class CMClientApp {
         } catch (IOException e) {
             e.printStackTrace();
         }
+
     }
 
     public void printAllMenus() {
@@ -159,43 +197,68 @@ public class CMClientApp {
     }
 
     public void loginDS() {
-        String strUserName = null;
-        String strPassword = null;
+        clientConsole.append("# Login to default server.\n");
+        JFrame loginFrame = new JFrame();
+        loginFrame.addWindowListener(new WindowAdapter() {
+            public void windowClosing(WindowEvent e) {
+                clientConsole.append("Login failed\n");
+            }
+        });
 
-        System.out.println(R + "#" + G + " login to default server." + R);
-        System.out.print(Y + "user name: " + R);
-        BufferedReader br = new BufferedReader(new InputStreamReader(System.in));
-        try {
-            strUserName = br.readLine();
-            System.out.print(Y + "password: " + R);
-            strPassword = br.readLine();
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
+        loginFrame.setLayout(new FlowLayout(FlowLayout.RIGHT));
+        loginFrame.setTitle("login");
+        loginFrame.setSize(280, 130);
+        loginFrame.setLocationRelativeTo(null);
+        loginFrame.setVisible(true);
 
-        if (m_clientStub.loginCM(strUserName, strPassword)) {
-            System.out.println(G + "This client successfully logs in to the default server." + R);
-            strFilePath = ".\\client-file-path-" + strUserName + "\\"; // initial set filepath
-        } else {
-            System.err.println("failed the login request!");
-        }
-        System.out.println(R + "======");
+        JLabel ID = new JLabel("ID: ");
+        loginFrame.add(ID);
+
+        JTextField IDInput = new JTextField(15);
+        loginFrame.add(IDInput);
+
+        JLabel PW = new JLabel("PASSWORD:");
+        loginFrame.add(PW);
+
+        JTextField PWInput = new JTextField(15);
+        loginFrame.add(PWInput);
+
+        JButton loginButton = new JButton("login");
+        loginFrame.add(loginButton);
+
+        loginButton.addActionListener(new ActionListener() {
+            public void actionPerformed(ActionEvent e) {
+                String userName = IDInput.getText();
+                String password = PWInput.getText();
+                if (m_clientStub.loginCM(userName, password)) {
+                    strFilePath = ".\\client-file-path-" + userName + "\\"; // initial set filepath
+                    m_clientStub.setTransferedFileHome(Paths.get(strFilePath));
+                    setTitle("Client " + userName);
+                    loginFrame.dispose();
+                } else {
+                    clientConsole.append("failed the login request!\n");
+                    loginFrame.dispose();
+                }
+                clientConsole.append("======\n");
+            }
+        });
+
     }
 
     public void logoutDS() {
         if (m_clientStub.getCMInfo().getInteractionInfo().getMyself().getState() != CMInfo.CM_CHAR) {
-            System.err.println("Client is not logged in.");
+            clientConsole.append("Client is not logged in.\n");
             return;
         }
-        System.out.println("#" + G + " logout from default server." + R);
+        clientConsole.append("# Logout from default server.\n");
         if (m_clientStub.logoutCM())
-            System.out.println(G + "successfully sent the logout request." + R);
+            clientConsole.append("Successfully sent the logout request.\n");
         else
-            System.err.println("failed the logout request!");
-        System.out.println("======");
+            clientConsole.append("Failed the logout request!\n");
+        clientConsole.append("======\n");
     }
 
-    public void setFilePath() {
+    public void newClientFilePath() {
         BufferedReader br = new BufferedReader(new InputStreamReader(System.in));
         System.out.println("#" + G + "set file path.");
         if (strFilePath != null)
@@ -228,59 +291,51 @@ public class CMClientApp {
 
     public void pushFile() {
         if (m_clientStub.getCMInfo().getInteractionInfo().getMyself().getState() != CMInfo.CM_CHAR) {
-            System.err.println("Client is not logged in. You have to log in first to pushfile.");
+            clientConsole.append("Client is not logged in. You have to log in first to pushFile.\n");
             return;
         }
 
-        JFileChooser fc = new JFileChooser();
+        JFileChooser pushFileChooser = new JFileChooser();
         File filePath = new File(strFilePath);
 
-        System.out.println(R + "#" + G + "Transfer files to Default Server" + R);
+        clientConsole.append("# Transfer files to Default Server\n");
         if (!filePath.exists()) {
             filePath.mkdir();
-            System.out.println(Y + "Directory " + R + strFilePath + Y + "is created" + R);
+            clientConsole.append("Directory \'" + strFilePath + "\' is created\n");
         }
 
-        fc.setFileSelectionMode(JFileChooser.FILES_AND_DIRECTORIES);
-        fc.setMultiSelectionEnabled(true);
-        fc.setCurrentDirectory(filePath);
-        if (fc.showOpenDialog(null) != JFileChooser.APPROVE_OPTION)
+        pushFileChooser.setFileSelectionMode(JFileChooser.FILES_AND_DIRECTORIES);
+        pushFileChooser.setMultiSelectionEnabled(true);
+        pushFileChooser.setCurrentDirectory(filePath);
+        if (pushFileChooser.showOpenDialog(null) != JFileChooser.APPROVE_OPTION)
         {
-            System.err.println("File Chooser is canceled");
+            clientConsole.append("File Chooser is canceled\n");
             return;
         }
 
-        File[] files = fc.getSelectedFiles();
+        File[] files = pushFileChooser.getSelectedFiles();
         if (files.length < 1) {
-            System.err.println("No file selected!");
+            clientConsole.append("No file selected!\n");
             return;
         }
-        for (File file : files)
-            System.out.println(Y + "selected file = " + R + file.getName());
+        for (File file : files) {
+            clientConsole.append("selected file = " + file.getName() + "\n");
+        }
 
         for (File file : files) {
             if (m_clientStub.pushFile(file.getPath(), m_clientStub.getDefaultServerName()) == false) {
-                System.err.println("Push file error!");
+                clientConsole.append("Push file error!\n");
                 return;
             }
         }
-        System.out.println(B + "Files were transferred successfully!" + R);
-        System.out.println("======");
-
-        //        if (strFileName.isEmpty()) {
-//            System.err.println("You must enter a file name.");
-//            return;
-//        }
-//        if (m_clientStub.pushFile(strFilePath + strFileName, strReceiver) == false) ;
-//        System.err.println("Push file error! file(" + strFileName + "), receiver(" + strReceiver + ")");
+        clientConsole.append("Files were transferred successfully!\n");
+        clientConsole.append("======\n");
     }
 
     public static void main(String[] args) {
         CMClientApp client = new CMClientApp();
         CMClientStub cmStub = client.getClientStub();
         cmStub.setAppEventHandler(client.getClientEventHandler());
-        client.StartCM();
-
-        System.out.println(Y + "Client application is terminated.");
+        client.startCM();
     }
 }
