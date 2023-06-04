@@ -23,6 +23,9 @@ class EventID {
 
     public static final int FILESYNC_PUSH_REQUEST = 21;
     public static final int FILESYNC_PUSH_REJECT = 22;
+    public static final int FILESYNC_FILE_DELETE_REQUEST = 23;
+    public static final int FILESYNC_FILE_DELETE_REJECT = 24;
+    public static final int FILESYNC_FILE_DELETE_NOT_EXIST = 25;
 }
 
 public class Utils {
@@ -32,4 +35,30 @@ public class Utils {
                 return (fileList.get(i).logicalClock);
         return (-1);
     }
+
+    public static int increaseLogicalClock(String filename, ArrayList<FileInfo> fileList) {
+        for (int i = 0; i < fileList.size(); i++){
+            if (fileList.get(i).name.equals(filename)){
+                fileList.get(i).logicalClock++;
+                return (fileList.get(i).logicalClock);
+            }
+        }
+        return (-1);
+    }
+
+    public static void setLogicalClock(String filename, ArrayList<FileInfo> fileList, Integer LC) {
+        for (int i = 0; i < fileList.size(); i++){
+            if (fileList.get(i).name.equals(filename)){
+                fileList.get(i).logicalClock = LC;
+                return;
+            }
+        }
+    }
+
+    public static void deleteFileFromList(String filename, ArrayList<FileInfo> fileList) {
+        for (int i = 0; i < fileList.size(); i++)
+            if (fileList.get(i).name.equals(filename))
+                fileList.remove(i);
+    }
+
 }

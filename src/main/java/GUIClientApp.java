@@ -20,7 +20,7 @@ public class GUIClientApp extends JFrame{
     private boolean m_bRun;
     public static String strClientFilePath = null;
     public JFrame clientFrame = new JFrame();
-    private static JTextArea clientConsole = new JTextArea(40, 40);
+    static JTextArea clientConsole = new JTextArea(40, 40);
     public static ArrayList<FileInfo> clientFileList = new ArrayList<>();
     public static final String R = "\u001B[0m";
     public static final String G = "\u001B[32m";
@@ -72,7 +72,7 @@ public class GUIClientApp extends JFrame{
         syncButton.addActionListener(new ActionListener() {
             public void actionPerformed(ActionEvent e) {
                 try {
-                    FileSync.syncFile();
+                    SyncFile.syncFile();
                 } catch (IOException ex) {
                     throw new RuntimeException(ex);
                 } catch (InterruptedException ex) {
@@ -84,13 +84,7 @@ public class GUIClientApp extends JFrame{
         JButton shareButton = new JButton("shareFile");
         shareButton.addActionListener(new ActionListener() {
             public void actionPerformed(ActionEvent e) {
-                try {
-                    FileSync.syncFile();
-                } catch (IOException ex) {
-                    throw new RuntimeException(ex);
-                } catch (InterruptedException ex) {
-                    throw new RuntimeException(ex);
-                }
+                shareFile();
             }
         });
         add(shareButton);
@@ -103,21 +97,90 @@ public class GUIClientApp extends JFrame{
         setVisible(true);
     }
 
-    class FileSync {
+    class ShareFile {
+        public static void shareFile() throws IOException, InterruptedException {
+            m_clientStub.setTransferedFileHome(Paths.get(strClientFilePath));
+            if (m_clientStub.getCMInfo().getInteractionInfo().getMyself().getState() != CMInfo.CM_CHAR) {
+                clientConsole.append("Client is not logged in. You have to log in first to shareFile.\n");
+                return;
+            }
+            clientConsole.append("# Share files with other clients\n");
+            JFrame shareFrame = new JFrame();
+            shareFrame.addWindowListener(new WindowAdapter() {
+                public void windowClosing(WindowEvent e) {
+                    clientConsole.append("File share failed\n");
+                    shareFrame.dispose();
+                }
+            });
+
+            shareFrame.setLayout(new FlowLayout(FlowLayout.RIGHT));
+            shareFrame.setTitle("File share");
+            shareFrame.setSize(280, 130);
+            shareFrame.setLocationRelativeTo(null);
+            shareFrame.setVisible(true);
+
+            JLabel targetClient = new JLabel("Client to share file: ");
+            shareFrame.add(targetClient);
+
+            JTextField targetClientInput = new JTextField(15);
+            shareFrame.add(targetClientInput);
+
+            JButton shareButton = new JButton("Share");
+            shareFrame.add(shareButton);
+
+            shareButton.addActionListener(new ActionListener() {
+                public void actionPerformed(ActionEvent e) {
+                    String targetClientInputText = targetClientInput.getText();
+                }
+            });
+            trackFile();
+        }
+
+        public static void trackFile() throws IOException, InterruptedException {
+            WatchService service = FileSystems.getDefault().newWatchService();
+            Path dir = Paths.get(strClientFilePath).toAbsolutePath();
+            System.out.println(dir.toString());
+            dir.register(service,
+                    StandardWatchEventKinds.ENTRY_CREATE,
+                    StandardWatchEventKinds.ENTRY_DELETE,
+                    StandardWatchEventKinds.ENTRY_MODIFY);
+            while (true) {
+                System.out.print("@\n");
+                WatchKey key = service.take();
+                List<WatchEvent<?>> list = key.pollEvents();
+                for (WatchEvent<?> event : list) {
+                    WatchEvent.Kind<?> kind = event.kind();
+                    String eventFileName = ((Path) event.context()).getFileName().toString();
+                    if (kind.equals(StandardWatchEventKinds.ENTRY_CREATE)) {
+                        fileCreated(eventFileName);
+                        return;
+                    } else if (kind.equals(StandardWatchEventKinds.ENTRY_DELETE)) {
+                        fileDeleted(eventFileName);
+                        return;
+                    } else if (kind.equals(StandardWatchEventKinds.ENTRY_MODIFY)) {
+                        fileModified(eventFileName);
+                        return;
+                    }
+                }
+                if (!key.reset()) break;
+            }
+            service.close();
+        }
+    }
+
+    class SyncFile {
         public static void syncFile() throws IOException, InterruptedException {
+            m_clientStub.setTransferedFileHome(Paths.get(strClientFilePath));
             if (m_clientStub.getCMInfo().getInteractionInfo().getMyself().getState() != CMInfo.CM_CHAR) {
                 clientConsole.append("Client is not logged in. You have to log in first to syncFile.\n");
                 return;
             }
-
             clientConsole.append("# Synchronize files with the server\n");
 
             trackFile();
-
-            clientConsole.append("Sync end\n");
         }
 
-        public static void trackFile() throws IOException, InterruptedIOException, InterruptedException {
+        public static void trackFile() throws IOException, InterruptedException {
             WatchService service = FileSystems.getDefault().newWatchService();
             Path dir = Paths.get(strClientFilePath).toAbsolutePath();
             System.out.println(dir.toString());
@@ -148,25 +211,33 @@ public class GUIClientApp extends JFrame{
             service.close();
         }
         public static void fileCreated(String fileName) {
-            clientConsole.append("# New file created: " + fileName + "\n");
+            clientConsole.append(" - New file created: " + fileName + "\n");
             clientFileList.add(new FileInfo(fileName, m_clientStub.getMyself().getName(), 1));
             CMDummyEvent dummyEvent = new CMDummyEvent();
             dummyEvent.setDummyInfo("1:" + fileName);
             dummyEvent.setID(EventID.FILESYNC_FILECREATED);
-            System.out.println("test : eventsend");
-            m_clientStub.send(dummyEvent, m_clientStub.getDefaultServerName());
+            System.out.println(m_clientStub.send(dummyEvent, "SERVER"));
         }
 
         public static void fileDeleted(String fileName) {
-            clientConsole.append("# File Deleted: " + fileName + "\n");
+            clientConsole.append(" - File Deleted: " + fileName + "\n");
+            Integer LC = Utils.increaseLogicalClock(fileName, clientFileList);
+            CMDummyEvent dummyEvent = new CMDummyEvent();
+            dummyEvent.setDummyInfo(LC + ":" + fileName);
+            dummyEvent.setID(EventID.FILESYNC_FILEDELETED);
+            m_clientStub.send(dummyEvent, "SERVER");
+            //Utils.deleteFileFromList(fileName, clientFileList);
         }
 
         public static void fileModified(String fileName) {
-            clientConsole.append("# File modified: " + fileName + "\n");
+            clientConsole.append(" - File modified: " + fileName + "\n");
+            Integer LC = Utils.increaseLogicalClock(fileName, clientFileList);
+            CMDummyEvent dummyEvent = new CMDummyEvent();
+            dummyEvent.setDummyInfo(LC + ":" + fileName);
+            dummyEvent.setID(EventID.FILESYNC_FILEMODIFIED);
+            m_clientStub.send(dummyEvent, "SERVER");
         }
     }
-
-
 
     public void loginDS() {
         clientConsole.append("# Login to default server.\n");
@@ -174,11 +245,12 @@ public class GUIClientApp extends JFrame{
         loginFrame.addWindowListener(new WindowAdapter() {
             public void windowClosing(WindowEvent e) {
                 clientConsole.append("Login failed\n");
+                loginFrame.dispose();
             }
         });
 
         loginFrame.setLayout(new FlowLayout(FlowLayout.RIGHT));
-        loginFrame.setTitle("login");
+        loginFrame.setTitle("Login");
         loginFrame.setSize(280, 130);
         loginFrame.setLocationRelativeTo(null);
         loginFrame.setVisible(true);
@@ -204,9 +276,15 @@ public class GUIClientApp extends JFrame{
                 String password = PWInput.getText();
                 if (m_clientStub.loginCM(userName, password)) {
                     strClientFilePath = ".\\client-file-path-" + userName + "\\"; // initial set filepath
+                    File filePath = new File(strClientFilePath);
+                    if (!filePath.exists()) {
+                        filePath.mkdir();
+                        clientConsole.append("Directory \'" + strClientFilePath + "\' is created\n");
+                    }
                     m_clientStub.setTransferedFileHome(Paths.get(strClientFilePath));
                     setTitle("Client " + userName);
                     loginFrame.dispose();
+                    setFileList();
                 } else {
                     clientConsole.append("failed the login request!\n");
                     loginFrame.dispose();
@@ -232,13 +310,9 @@ public class GUIClientApp extends JFrame{
 
     public void startCM() {
         setGUI();
-        setFileList();
         List<String> localAddressList = CMCommManager.getLocalIPList();
         String strCurrentLocalAddress = localAddressList.get(0).toString();
-        String strSavedServerAddress = null;
-        int nSavedServerPort = -1;
 
-        BufferedReader br = new BufferedReader(new InputStreamReader(System.in));
         System.out.println(G + "# start CM");
         System.out.println(Y + "my current address: " + R + strCurrentLocalAddress);
         System.out.println(Y + "saved server address: " + R + m_clientStub.getServerAddress());
@@ -253,7 +327,6 @@ public class GUIClientApp extends JFrame{
         if (!bRet) {
             System.err.println("CM initialization error!");
             clientConsole.append("CM initialization error!\n");
-            return;
         }
         //startClient();
     }
@@ -306,12 +379,12 @@ public class GUIClientApp extends JFrame{
 
         JFileChooser pushFileChooser = new JFileChooser();
         File filePath = new File(strClientFilePath);
-
-        clientConsole.append("# Transfer files to Default Server\n");
         if (!filePath.exists()) {
             filePath.mkdir();
             clientConsole.append("Directory \'" + strClientFilePath + "\' is created\n");
         }
+
+        clientConsole.append("# Transfer files to Default Server\n");
 
         pushFileChooser.setFileSelectionMode(JFileChooser.FILES_AND_DIRECTORIES);
         pushFileChooser.setMultiSelectionEnabled(true);
@@ -332,7 +405,7 @@ public class GUIClientApp extends JFrame{
         }
 
         for (File file : files) {
-            if (m_clientStub.pushFile(file.getPath(), m_clientStub.getDefaultServerName()) == false) {
+            if (m_clientStub.pushFile(file.getPath(), "SERVER") == false) {
                 clientConsole.append("Push file error!\n");
                 return;
             }

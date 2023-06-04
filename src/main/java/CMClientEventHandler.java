@@ -1,11 +1,13 @@
 import kr.ac.konkuk.ccslab.cm.event.CMDummyEvent;
 import kr.ac.konkuk.ccslab.cm.event.CMEvent;
+import kr.ac.konkuk.ccslab.cm.event.CMFileEvent;
 import kr.ac.konkuk.ccslab.cm.event.CMSessionEvent;
 import kr.ac.konkuk.ccslab.cm.event.handler.CMAppEventHandler;
 import kr.ac.konkuk.ccslab.cm.info.CMInfo;
 import kr.ac.konkuk.ccslab.cm.stub.CMClientStub;
 
 import javax.swing.*;
+import java.io.IOException;
 
 public class CMClientEventHandler implements CMAppEventHandler {
     private CMClientStub m_clientStub;
@@ -20,7 +22,12 @@ public class CMClientEventHandler implements CMAppEventHandler {
     public void processEvent(CMEvent cme) {
         switch (cme.getType()) {
             case CMInfo.CM_DUMMY_EVENT:
-                processDummyEvent(cme);
+                try {
+                    processDummyEvent(cme);
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+                break;
             case CMInfo.CM_SESSION_EVENT:
                 processSessionEvent(cme);
                 break;
@@ -29,19 +36,41 @@ public class CMClientEventHandler implements CMAppEventHandler {
         }
     }
 
-    private void processDummyEvent(CMEvent cme) {
+    private void processDummyEvent(CMEvent cme) throws IOException {
         System.out.println("test: receive dummy event - info: " + ((CMDummyEvent)cme).getDummyInfo());
-        System.out.println("test: id - " + cme.getID());
-        String fileName = ((CMDummyEvent)cme).getDummyInfo();
-        String strTargetFilePath = GUIClientApp.strClientFilePath + fileName;
-        System.out.println("test: file path: " + strTargetFilePath);
+        //System.out.println("test: id - " + cme.getID());
+        String[] parsedInfo = ((CMDummyEvent)cme).getDummyInfo().split(":");
+        String fileName = parsedInfo[1];
+        Integer serverLogicalClock = Integer.valueOf(parsedInfo[0]);
+        Integer clientLogicalClock = Utils.findLogicalClock(fileName, GUIClientApp.clientFileList);
+        //File file = new File(GUIClientApp.strClientFilePath + fileName);
+        //System.out.println("test: file path: " + file.getCanonicalPath());
         switch (cme.getID()) {
             case EventID.FILESYNC_PUSH_REQUEST:
-                m_clientConsole.append("FileSync: \'" + fileName + "\' needs synchronizing. Send file to server.");
-                System.out.println(m_clientStub.pushFile(strTargetFilePath, m_clientStub.getDefaultServerName()));
+                if (serverLogicalClock == -1)
+                    m_clientConsole.append("FileSync: \'" + fileName + "\' does not exist on the server. Send file to server.\n");
+                else
+                    m_clientConsole.append("FileSync: \'" + fileName + "\' needs synchronizing. Send file to server.\n");
+                break;
             case EventID.FILESYNC_PUSH_REJECT:
-
+                m_clientConsole.append("FileSync: \'" + fileName + "\' is in conflict.\n");
+                break;
+            case EventID.FILESYNC_FILE_DELETE_REQUEST:
+                m_clientConsole.append("FileSync(Delete): \'" + fileName + "\' needs synchronizing. The file was deleted from the server.\n");
+                Utils.deleteFileFromList(fileName, GUIClientApp.clientFileList);
+                break;
+            case EventID.FILESYNC_FILE_DELETE_NOT_EXIST:
+                m_clientConsole.append("FileSync(Delete): \'" + fileName + "\' is deleted but server does not have it.\n");
+                Utils.deleteFileFromList(fileName, GUIClientApp.clientFileList);
+                break;
+            case EventID.FILESYNC_FILE_DELETE_REJECT:
+                m_clientConsole.append("FileSync(Delete): \'" + fileName + "\' is in conflict.\n");
+                Utils.deleteFileFromList(fileName, GUIClientApp.clientFileList);
+                break;
+            default:
+                return;
         }
+        m_clientConsole.append("FileSync: LC at the time of synchronization - Client(" + clientLogicalClock + "), Server(" + serverLogicalClock + ")\n");
     }
 
     private void processSessionEvent(CMEvent cme) {

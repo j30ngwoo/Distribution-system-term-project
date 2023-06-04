@@ -51,6 +51,8 @@ public class CMServerApp {
             return;
         }
         setFileList();
+
+
         startServer();
     }
 
@@ -110,6 +112,7 @@ public class CMServerApp {
                     return;
                 case 1:
                     test();
+                    break;
                 default:
                     System.err.println("Unknown command.");
                     break;
@@ -124,7 +127,7 @@ public class CMServerApp {
     }
     private void test()
     {
-        //CMServerEventHandler.processSyncFileCreated(1, "2", "1");
+        m_serverStub.requestFile("3", "1");
     }
 
     public void printAllMenus()
