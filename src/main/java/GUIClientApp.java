@@ -1,3 +1,5 @@
+import kr.ac.konkuk.ccslab.cm.entity.CMMember;
+import kr.ac.konkuk.ccslab.cm.entity.CMUser;
 import kr.ac.konkuk.ccslab.cm.event.CMDummyEvent;
 import kr.ac.konkuk.ccslab.cm.info.CMInfo;
 import kr.ac.konkuk.ccslab.cm.manager.CMCommManager;
@@ -13,6 +15,7 @@ import java.io.*;
 import java.nio.file.*;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Vector;
 
 public class GUIClientApp extends JFrame{
     private static CMClientStub m_clientStub;
@@ -21,7 +24,7 @@ public class GUIClientApp extends JFrame{
     public static String strClientFilePath = null;
     public JFrame clientFrame = new JFrame();
     static JTextArea clientConsole = new JTextArea(40, 40);
-    public static ArrayList<FileInfo> clientFileList = new ArrayList<>();
+    public static ArrayList<SyncFileInfo> clientFileList = new ArrayList<>();
     public static final String R = "\u001B[0m";
     public static final String G = "\u001B[32m";
     public static final String Y = "\u001B[33m";
@@ -84,7 +87,13 @@ public class GUIClientApp extends JFrame{
         JButton shareButton = new JButton("shareFile");
         shareButton.addActionListener(new ActionListener() {
             public void actionPerformed(ActionEvent e) {
-                shareFile();
+                try {
+                    ShareFile.setShareFileFrame();
+                } catch (IOException ex) {
+                    throw new RuntimeException(ex);
+                } catch (InterruptedException ex) {
+                    throw new RuntimeException(ex);
+                }
             }
         });
         add(shareButton);
@@ -98,12 +107,14 @@ public class GUIClientApp extends JFrame{
     }
 
     class ShareFile {
-        public static void shareFile() throws IOException, InterruptedException {
-            m_clientStub.setTransferedFileHome(Paths.get(strClientFilePath));
+        static String targetClientInputText;
+        static File shareFile;
+        public static void setShareFileFrame() throws IOException, InterruptedException {
             if (m_clientStub.getCMInfo().getInteractionInfo().getMyself().getState() != CMInfo.CM_CHAR) {
                 clientConsole.append("Client is not logged in. You have to log in first to shareFile.\n");
                 return;
             }
+            m_clientStub.setTransferedFileHome(Paths.get(strClientFilePath));
             clientConsole.append("# Share files with other clients\n");
             JFrame shareFrame = new JFrame();
             shareFrame.addWindowListener(new WindowAdapter() {
@@ -115,7 +126,7 @@ public class GUIClientApp extends JFrame{
 
             shareFrame.setLayout(new FlowLayout(FlowLayout.RIGHT));
             shareFrame.setTitle("File share");
-            shareFrame.setSize(280, 130);
+            shareFrame.setSize(310, 100);
             shareFrame.setLocationRelativeTo(null);
             shareFrame.setVisible(true);
 
@@ -130,53 +141,49 @@ public class GUIClientApp extends JFrame{
 
             shareButton.addActionListener(new ActionListener() {
                 public void actionPerformed(ActionEvent e) {
-                    String targetClientInputText = targetClientInput.getText();
+                    targetClientInputText = targetClientInput.getText();
+                    shareFile(targetClientInputText);
+                    shareFrame.dispose();
                 }
             });
-            trackFile();
         }
 
-        public static void trackFile() throws IOException, InterruptedException {
-            WatchService service = FileSystems.getDefault().newWatchService();
-            Path dir = Paths.get(strClientFilePath).toAbsolutePath();
-            System.out.println(dir.toString());
-            dir.register(service,
-                    StandardWatchEventKinds.ENTRY_CREATE,
-                    StandardWatchEventKinds.ENTRY_DELETE,
-                    StandardWatchEventKinds.ENTRY_MODIFY);
-            while (true) {
-                System.out.print("@\n");
-                WatchKey key = service.take();
-                List<WatchEvent<?>> list = key.pollEvents();
-                for (WatchEvent<?> event : list) {
-                    WatchEvent.Kind<?> kind = event.kind();
-                    String eventFileName = ((Path) event.context()).getFileName().toString();
-                    if (kind.equals(StandardWatchEventKinds.ENTRY_CREATE)) {
-                        fileCreated(eventFileName);
-                        return;
-                    } else if (kind.equals(StandardWatchEventKinds.ENTRY_DELETE)) {
-                        fileDeleted(eventFileName);
-                        return;
-                    } else if (kind.equals(StandardWatchEventKinds.ENTRY_MODIFY)) {
-                        fileModified(eventFileName);
-                        return;
-                    }
-                }
-                if (!key.reset()) break;
+        private static void shareFile(String targetClient){
+            JFileChooser pushFileChooser = new JFileChooser();
+            File filePath = new File(strClientFilePath);
+
+            pushFileChooser.setFileSelectionMode(JFileChooser.FILES_AND_DIRECTORIES);
+            pushFileChooser.setMultiSelectionEnabled(false);
+            pushFileChooser.setCurrentDirectory(filePath);
+            if (pushFileChooser.showOpenDialog(null) != JFileChooser.APPROVE_OPTION)
+            {
+                clientConsole.append("File Chooser is canceled\n");
+                return;
             }
-            service.close();
+
+            shareFile = pushFileChooser.getSelectedFile();
+            if (shareFile == null) {
+                clientConsole.append("No file selected!\n");
+                return;
+            }
+            String shareFileName = shareFile.getName();
+            clientConsole.append("selected file = " + shareFileName + "\n");
+
+            CMDummyEvent dummyEvent = new CMDummyEvent();
+            dummyEvent.setDummyInfo(targetClient + ":" + shareFileName);
+            dummyEvent.setID(EventID.FILESHARE_REQUEST);
+            m_clientStub.send(dummyEvent, "SERVER");
         }
     }
 
     class SyncFile {
         public static void syncFile() throws IOException, InterruptedException {
-            m_clientStub.setTransferedFileHome(Paths.get(strClientFilePath));
             if (m_clientStub.getCMInfo().getInteractionInfo().getMyself().getState() != CMInfo.CM_CHAR) {
                 clientConsole.append("Client is not logged in. You have to log in first to syncFile.\n");
                 return;
             }
+            m_clientStub.setTransferedFileHome(Paths.get(strClientFilePath));
             clientConsole.append("# Synchronize files with the server\n");
-
             trackFile();
         }
 
@@ -189,7 +196,6 @@ public class GUIClientApp extends JFrame{
                     StandardWatchEventKinds.ENTRY_DELETE,
                     StandardWatchEventKinds.ENTRY_MODIFY);
             while (true) {
-                System.out.print("@\n");
                 WatchKey key = service.take();
                 List<WatchEvent<?>> list = key.pollEvents();
                 for(WatchEvent<?> event : list){
@@ -212,11 +218,11 @@ public class GUIClientApp extends JFrame{
         }
         public static void fileCreated(String fileName) {
             clientConsole.append(" - New file created: " + fileName + "\n");
-            clientFileList.add(new FileInfo(fileName, m_clientStub.getMyself().getName(), 1));
+            clientFileList.add(new SyncFileInfo(fileName, 1));
             CMDummyEvent dummyEvent = new CMDummyEvent();
             dummyEvent.setDummyInfo("1:" + fileName);
             dummyEvent.setID(EventID.FILESYNC_FILECREATED);
-            System.out.println(m_clientStub.send(dummyEvent, "SERVER"));
+            m_clientStub.send(dummyEvent, "SERVER");
         }
 
         public static void fileDeleted(String fileName) {
@@ -336,7 +342,7 @@ public class GUIClientApp extends JFrame{
 
         for (int i = 0; i < fileNames.length; i++) {
             clientConsole.append("File detected: \'" + fileNames[i] + "\' - adding to file list\n");
-            clientFileList.add(new FileInfo(fileNames[i], m_clientStub.getMyself().getName(), 1));
+            clientFileList.add(new SyncFileInfo(fileNames[i], 1));
         }
     }
 

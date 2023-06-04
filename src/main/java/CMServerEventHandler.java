@@ -1,3 +1,4 @@
+import kr.ac.konkuk.ccslab.cm.entity.CMMember;
 import kr.ac.konkuk.ccslab.cm.event.CMDummyEvent;
 import kr.ac.konkuk.ccslab.cm.event.CMEvent;
 import kr.ac.konkuk.ccslab.cm.event.CMFileEvent;
@@ -9,8 +10,10 @@ import kr.ac.konkuk.ccslab.cm.stub.CMServerStub;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 
 public class CMServerEventHandler implements CMAppEventHandler {
+    public static ArrayList<ShareFileInfo> serverShareFileList = new ArrayList<>();
     private CMServerStub m_serverStub;
 
     public CMServerEventHandler(CMServerStub serverStub) {
@@ -41,7 +44,6 @@ public class CMServerEventHandler implements CMAppEventHandler {
 
     private void processSessionEvent(CMEvent cme) {
         CMSessionEvent se = (CMSessionEvent) cme;
-
         switch (se.getID()) {
             case CMSessionEvent.LOGIN:
                 System.out.println("[" + se.getUserName() + "]" + GUIClientApp.B + " requests login." + GUIClientApp.R);
@@ -66,37 +68,118 @@ public class CMServerEventHandler implements CMAppEventHandler {
     private void processDummyEvent(CMEvent cme) throws IOException {
         //System.out.println("test : dummy event: " + cme.getType() + " : " + cme.getID());
         String[] parsedMessage = ((CMDummyEvent)cme).getDummyInfo().split(":");
-        Integer currentLogicalClock = Integer.valueOf(parsedMessage[0]);
-
         String eventSender = cme.getSender();
         switch (cme.getID()) {
             case EventID.FILESYNC_FILECREATED:
-                processSyncFileCreated(currentLogicalClock, parsedMessage[1], eventSender);
+                processSyncFileCreated(Integer.valueOf(parsedMessage[0]), parsedMessage[1], eventSender);
                 break;
             case EventID.FILESYNC_FILEDELETED:
-                processSyncFileDeleted(currentLogicalClock, parsedMessage[1], eventSender);
+                processSyncFileDeleted(Integer.valueOf(parsedMessage[0]), parsedMessage[1], eventSender);
                 break;
             case EventID.FILESYNC_FILEMODIFIED:
-                processSyncFileModified(currentLogicalClock, parsedMessage[1], eventSender);
+                processSyncFileModified(Integer.valueOf(parsedMessage[0]), parsedMessage[1], eventSender);
+                break;
+            case EventID.FILESHARE_REQUEST:
+                processFileShareRequested(parsedMessage[0], parsedMessage[1], eventSender);
                 break;
         }
     }
 
+    private void processFileShareRequested(String targetClient, String fileName, String eventSender){
+        System.out.println("# New file share requested: Sender=\'" + eventSender + "\' FileName=\'" + fileName + "\' TargetClient=" + targetClient);
+        if (m_serverStub.getCMInfo().getInteractionInfo().getLoginUsers().isMember(targetClient))
+        {
+            int fileIndex = Utils.findFileFromList(fileName, serverShareFileList);
+            if (fileIndex == -1) {
+                registerNewShareFile(targetClient, fileName, eventSender);
+            } else {
+                registerNewClient(targetClient, fileName, eventSender, fileIndex);
+            }
+        }else{
+            CMDummyEvent dummyEvent = new CMDummyEvent();
+            dummyEvent.setDummyInfo(targetClient + ":" + null);
+            dummyEvent.setID(EventID.FILESHARE_TARGETCLIENT_NOT_EXIST);
+            m_serverStub.send(dummyEvent, eventSender);
+        }
+    }
+
+    private void registerNewClient(String targetClient, String fileName, String eventSender, int fileIndex){
+        ArrayList<String> clientList = serverShareFileList.get(fileIndex).sharedClients;
+        System.out.println(Utils.findUserInStringArray(eventSender, clientList)); // test
+        if (Utils.findUserInStringArray(eventSender, clientList) == -1){
+            System.out.println("\'" + fileName + "\' already shared. Client '" + eventSender +"' is in conflict.");
+            CMDummyEvent dummyEvent = new CMDummyEvent();
+            dummyEvent.setDummyInfo(targetClient + ":" + fileName);
+            dummyEvent.setID(EventID.FILESHARE_CONFLICT_OCCURED);
+            m_serverStub.send(dummyEvent, eventSender);
+        } else {
+            if (Utils.findUserInStringArray(targetClient, clientList) == -1) {
+                System.out.println("Client '" + targetClient + "\' does not share" + fileName + ". New Client added to Share list.");
+                Utils.addClientToList(fileName, serverShareFileList, targetClient);
+                CMDummyEvent dummyEvent = new CMDummyEvent();
+                dummyEvent.setDummyInfo(targetClient + ":" + fileName);
+                dummyEvent.setID(EventID.FILESHARE_NEWCLIENT_ACCEPT);
+                m_serverStub.send(dummyEvent, eventSender);
+                m_serverStub.requestFile(fileName, eventSender);
+                castFile(fileName, eventSender);
+            } else {
+                System.out.println("Sender='" + eventSender + "' - Receiver='" + targetClient + "' already shared this file.");
+                CMDummyEvent dummyEvent = new CMDummyEvent();
+                dummyEvent.setDummyInfo(targetClient + ":" + fileName);
+                dummyEvent.setID(EventID.FILESHARE_TARGETCLIENT_ALREADY_SHARE_THISFILE);
+                m_serverStub.send(dummyEvent, eventSender);
+            }
+        }
+    }
+
+    private void registerNewShareFile(String targetClient, String fileName, String eventSender){
+        System.out.println("\'" + fileName + "\' does not exist shared list. File added to list.");
+        serverShareFileList.add(new ShareFileInfo(fileName, eventSender));
+        Utils.addClientToList(fileName, serverShareFileList, targetClient);
+        CMDummyEvent dummyEvent = new CMDummyEvent();
+        dummyEvent.setDummyInfo(targetClient + ":" + fileName);
+        dummyEvent.setID(EventID.FILESHARE_NEWFILE_ACCEPT);
+        m_serverStub.send(dummyEvent, eventSender);
+        m_serverStub.requestFile(fileName, eventSender);
+        castFile(fileName, eventSender);
+    }
+
+    private void castFile(String fileName, String eventSender){
+        ArrayList<String> clientList = null;
+        CMDummyEvent dummyEvent = new CMDummyEvent();
+        dummyEvent.setDummyInfo(eventSender + ":" + fileName);
+        dummyEvent.setID(EventID.FILESHARE_FILEPUSH);
+        for (int i = 0; i < serverShareFileList.size(); i++) {
+            if (serverShareFileList.get(i).name.equals(fileName))
+                clientList = serverShareFileList.get(i).sharedClients;
+        }
+        for (int i = 0; i < clientList.size(); i++){
+            String targetClient = clientList.get(i);
+            if (!targetClient.equals(eventSender)){
+                System.out.println("test: filename=" + fileName + " targetClient=" + targetClient);
+                m_serverStub.pushFile(".\\server-file-path\\" + clientList.get(0)
+                        + "\\" + fileName, targetClient);
+                m_serverStub.send(dummyEvent, targetClient);
+            }
+        }
+
+    }
+
     private void processSyncFileCreated(Integer clientLogicalClock, String fileName, String eventSender){
         CMDummyEvent dummyEvent = new CMDummyEvent();
-        Integer serverLogicalClock = Utils.findLogicalClock(fileName, CMServerApp.serverFileList);
+        Integer serverLogicalClock = Utils.findLogicalClock(fileName, CMServerApp.serverSyncFileList);
         dummyEvent.setDummyInfo(serverLogicalClock + ":" + fileName);
         if (serverLogicalClock == -1){
             System.out.println("# FileSync: \'" + fileName + "\' does not exist on the server. - add to file list");
-            CMServerApp.serverFileList.add(new FileInfo(fileName, null, clientLogicalClock));
+            CMServerApp.serverSyncFileList.add(new SyncFileInfo(fileName, clientLogicalClock));
             m_serverStub.requestFile(fileName, eventSender);
-            dummyEvent.setID(EventID.FILESYNC_PUSH_REQUEST);
+            dummyEvent.setID(EventID.FILESYNC_PUSH_ACCEPT);
             m_serverStub.send(dummyEvent, eventSender);
         } else if (clientLogicalClock > serverLogicalClock) {
             System.out.println("# FileSync: Send a filePush request - LC : Client(" + clientLogicalClock + ") > Server(" + serverLogicalClock + ")");
-            Utils.setLogicalClock(fileName, CMServerApp.serverFileList, clientLogicalClock);
+            Utils.setLogicalClock(fileName, CMServerApp.serverSyncFileList, clientLogicalClock);
             m_serverStub.requestFile(fileName, eventSender);
-            dummyEvent.setID(EventID.FILESYNC_PUSH_REQUEST);
+            dummyEvent.setID(EventID.FILESYNC_PUSH_ACCEPT);
             m_serverStub.send(dummyEvent, eventSender);
         } else {
             System.out.println("# FileSync: FilePush request rejected - LC : Client(" + clientLogicalClock + ") <= Server(" + serverLogicalClock + ")");
@@ -108,7 +191,7 @@ public class CMServerEventHandler implements CMAppEventHandler {
     private void processSyncFileDeleted(Integer clientLogicalClock, String fileName, String eventSender) throws IOException {
         CMDummyEvent dummyEvent = new CMDummyEvent();
         Path filePath = Path.of(".\\server-file-path\\" + eventSender + "\\" + fileName);
-        Integer serverLogicalClock = Utils.findLogicalClock(fileName, CMServerApp.serverFileList);
+        Integer serverLogicalClock = Utils.findLogicalClock(fileName, CMServerApp.serverSyncFileList);
         dummyEvent.setDummyInfo(serverLogicalClock + ":" + fileName);
         if (serverLogicalClock == -1){
             System.out.println("# FileSync: File deleted in client does not exist in Server.");
@@ -116,9 +199,9 @@ public class CMServerEventHandler implements CMAppEventHandler {
             m_serverStub.send(dummyEvent, eventSender);
         } else if (clientLogicalClock > serverLogicalClock) {
             System.out.println("# FileSync: File deleted in client - LC : Client(" + clientLogicalClock + ") > Server(" + serverLogicalClock + ")");
-            Utils.deleteFileFromList(fileName, CMServerApp.serverFileList);
+            Utils.deleteFileFromList(fileName, CMServerApp.serverSyncFileList);
             Files.delete(filePath);
-            dummyEvent.setID(EventID.FILESYNC_FILE_DELETE_REQUEST);
+            dummyEvent.setID(EventID.FILESYNC_FILE_DELETE_ACCEPT);
             m_serverStub.send(dummyEvent, eventSender);
         } else {
             System.out.println("# FileSync: File delete request rejected - LC : Client(" + clientLogicalClock + ") <= Server(" + serverLogicalClock + ")");
@@ -129,13 +212,13 @@ public class CMServerEventHandler implements CMAppEventHandler {
 
     private void processSyncFileModified(Integer clientLogicalClock, String fileName, String eventSender){
         CMDummyEvent dummyEvent = new CMDummyEvent();
-        Integer serverLogicalClock = Utils.findLogicalClock(fileName, CMServerApp.serverFileList);
+        Integer serverLogicalClock = Utils.findLogicalClock(fileName, CMServerApp.serverSyncFileList);
         dummyEvent.setDummyInfo(serverLogicalClock + ":" + fileName);
         if (clientLogicalClock > serverLogicalClock) {
             System.out.println("# FileSync: Send a filePush request - LC : Client(" + clientLogicalClock + ") > Server(" + serverLogicalClock + ")");
-            Utils.setLogicalClock(fileName, CMServerApp.serverFileList, clientLogicalClock);
+            Utils.setLogicalClock(fileName, CMServerApp.serverSyncFileList, clientLogicalClock);
             m_serverStub.requestFile(fileName, eventSender);
-            dummyEvent.setID(EventID.FILESYNC_PUSH_REQUEST);
+            dummyEvent.setID(EventID.FILESYNC_PUSH_ACCEPT);
             m_serverStub.send(dummyEvent, eventSender);
         } else {
             System.out.println("# FileSync: FilePush request rejected - LC : Client(" + clientLogicalClock + ") <= Server(" + serverLogicalClock + ")");

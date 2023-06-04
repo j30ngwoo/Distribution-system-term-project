@@ -1,23 +1,20 @@
 import kr.ac.konkuk.ccslab.cm.manager.CMCommManager;
 import kr.ac.konkuk.ccslab.cm.stub.CMServerStub;
 
-import javax.swing.*;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.attribute.BasicFileAttributeView;
 import java.util.ArrayList;
 import java.util.List;
 
 public class CMServerApp {
-    private CMServerStub m_serverStub;
+    public CMServerStub m_serverStub;
     private CMServerEventHandler m_eventHandler;
     public String strFilePath = ".\\server-file-path";
     private boolean m_bRun;
-    public static ArrayList<FileInfo> serverFileList = new ArrayList<>();
+    public static ArrayList<SyncFileInfo> serverSyncFileList = new ArrayList<>();
+
 
     public CMServerApp() {
         m_serverStub = new CMServerStub();
@@ -65,13 +62,13 @@ public class CMServerApp {
                 File[] listFiles = (new File(dirs[i].getPath())).listFiles();
                 for (int j = 0; j < listFiles.length; j++) {
                     System.out.print("New file detected: \'" + listFiles[j] + "\' - adding to file list\n");
-                    serverFileList.add(new FileInfo(listFiles[j].getName(), getOwnerName(listFiles[j]), 1));
+                    serverSyncFileList.add(new SyncFileInfo(listFiles[j].getName(), 1));
                     //System.out.print("test: " + listFiles[j].getName() + " " + getOwnerName(listFiles[j]) + "\n");
                 }
 
             } else {
                 System.out.print("New file detected: \'" + dirs[i] + "\' - adding to file list\n");
-                serverFileList.add(new FileInfo(dirs[i].getName(), null, 1));
+                serverSyncFileList.add(new SyncFileInfo(dirs[i].getName(), 1));
             }
         }
     } //TODO: initialize file list

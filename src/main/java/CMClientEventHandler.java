@@ -1,6 +1,5 @@
 import kr.ac.konkuk.ccslab.cm.event.CMDummyEvent;
 import kr.ac.konkuk.ccslab.cm.event.CMEvent;
-import kr.ac.konkuk.ccslab.cm.event.CMFileEvent;
 import kr.ac.konkuk.ccslab.cm.event.CMSessionEvent;
 import kr.ac.konkuk.ccslab.cm.event.handler.CMAppEventHandler;
 import kr.ac.konkuk.ccslab.cm.info.CMInfo;
@@ -8,6 +7,7 @@ import kr.ac.konkuk.ccslab.cm.stub.CMClientStub;
 
 import javax.swing.*;
 import java.io.IOException;
+import java.nio.file.Paths;
 
 public class CMClientEventHandler implements CMAppEventHandler {
     private CMClientStub m_clientStub;
@@ -31,6 +31,9 @@ public class CMClientEventHandler implements CMAppEventHandler {
             case CMInfo.CM_SESSION_EVENT:
                 processSessionEvent(cme);
                 break;
+            case CMInfo.CM_FILE_EVENT:
+                m_clientStub.setTransferedFileHome(Paths.get(GUIClientApp.strClientFilePath));
+                break;
             default:
                 return;
         }
@@ -40,37 +43,54 @@ public class CMClientEventHandler implements CMAppEventHandler {
         System.out.println("test: receive dummy event - info: " + ((CMDummyEvent)cme).getDummyInfo());
         //System.out.println("test: id - " + cme.getID());
         String[] parsedInfo = ((CMDummyEvent)cme).getDummyInfo().split(":");
+        String targetClient = parsedInfo[0];
         String fileName = parsedInfo[1];
-        Integer serverLogicalClock = Integer.valueOf(parsedInfo[0]);
-        Integer clientLogicalClock = Utils.findLogicalClock(fileName, GUIClientApp.clientFileList);
+        int serverLogicalClock = Integer.parseInt(parsedInfo[0]);
+        int clientLogicalClock = Utils.findLogicalClock(fileName, GUIClientApp.clientFileList);
         //File file = new File(GUIClientApp.strClientFilePath + fileName);
         //System.out.println("test: file path: " + file.getCanonicalPath());
         switch (cme.getID()) {
-            case EventID.FILESYNC_PUSH_REQUEST:
+            case EventID.FILESYNC_PUSH_ACCEPT:
                 if (serverLogicalClock == -1)
-                    m_clientConsole.append("FileSync: \'" + fileName + "\' does not exist on the server. Send file to server.\n");
+                    m_clientConsole.append("FileSync: '" + fileName + "' does not exist on the server. Send file to server.\n");
                 else
-                    m_clientConsole.append("FileSync: \'" + fileName + "\' needs synchronizing. Send file to server.\n");
+                    m_clientConsole.append("FileSync: '" + fileName + "' needs synchronizing. Send file to server.\n");
+                m_clientConsole.append("FileSync: LC at the time of synchronization - Client(" + clientLogicalClock + "), Server(" + serverLogicalClock + ")\n");
                 break;
             case EventID.FILESYNC_PUSH_REJECT:
-                m_clientConsole.append("FileSync: \'" + fileName + "\' is in conflict.\n");
+                m_clientConsole.append("FileSync: '" + fileName + "' is in conflict.\n");
+                m_clientConsole.append("FileSync: LC at the time of synchronization - Client(" + clientLogicalClock + "), Server(" + serverLogicalClock + ")\n");
                 break;
-            case EventID.FILESYNC_FILE_DELETE_REQUEST:
-                m_clientConsole.append("FileSync(Delete): \'" + fileName + "\' needs synchronizing. The file was deleted from the server.\n");
+            case EventID.FILESYNC_FILE_DELETE_ACCEPT:
+                m_clientConsole.append("FileSync(Delete): '" + fileName + "' needs synchronizing. The file was deleted from the server.\n");
+                m_clientConsole.append("FileSync: LC at the time of synchronization - Client(" + clientLogicalClock + "), Server(" + serverLogicalClock + ")\n");
                 Utils.deleteFileFromList(fileName, GUIClientApp.clientFileList);
                 break;
             case EventID.FILESYNC_FILE_DELETE_NOT_EXIST:
-                m_clientConsole.append("FileSync(Delete): \'" + fileName + "\' is deleted but server does not have it.\n");
+                m_clientConsole.append("FileSync(Delete): '" + fileName + "' is deleted but server does not have it.\n");
+                m_clientConsole.append("FileSync: LC at the time of synchronization - Client(" + clientLogicalClock + "), Server(" + serverLogicalClock + ")\n");
                 Utils.deleteFileFromList(fileName, GUIClientApp.clientFileList);
                 break;
             case EventID.FILESYNC_FILE_DELETE_REJECT:
-                m_clientConsole.append("FileSync(Delete): \'" + fileName + "\' is in conflict.\n");
+                m_clientConsole.append("FileSync(Delete): '" + fileName + "' is in conflict.\n");
+                m_clientConsole.append("FileSync: LC at the time of synchronization - Client(" + clientLogicalClock + "), Server(" + serverLogicalClock + ")\n");
                 Utils.deleteFileFromList(fileName, GUIClientApp.clientFileList);
+                break;
+            case EventID.FILESHARE_NEWFILE_ACCEPT:
+                m_clientConsole.append("FileShare: '" + fileName + "' is now shared with client '" + targetClient + "'\n");
+                break;
+            case EventID.FILESHARE_TARGETCLIENT_NOT_EXIST:
+                m_clientConsole.append("FileShare: Client '" + targetClient + "' does not exist.\n");
+                break;
+            case EventID.FILESHARE_CONFLICT_OCCURED:
+                m_clientConsole.append("FileShare: '" + fileName + "' is already shared - File is in conflict.\n");
+                break;
+            case EventID.FILESHARE_FILEPUSH:
+                m_clientConsole.append("FileShare: '" + fileName + "' is shared by '" + targetClient + "'.\n");
                 break;
             default:
                 return;
         }
-        m_clientConsole.append("FileSync: LC at the time of synchronization - Client(" + clientLogicalClock + "), Server(" + serverLogicalClock + ")\n");
     }
 
     private void processSessionEvent(CMEvent cme) {
