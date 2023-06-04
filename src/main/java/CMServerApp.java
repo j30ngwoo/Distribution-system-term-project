@@ -1,17 +1,23 @@
 import kr.ac.konkuk.ccslab.cm.manager.CMCommManager;
 import kr.ac.konkuk.ccslab.cm.stub.CMServerStub;
+
+import javax.swing.*;
 import java.io.BufferedReader;
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.BasicFileAttributeView;
+import java.util.ArrayList;
 import java.util.List;
 
 public class CMServerApp {
     private CMServerStub m_serverStub;
     private CMServerEventHandler m_eventHandler;
+    public String strFilePath = ".\\server-file-path";
     private boolean m_bRun;
+    public static ArrayList<FileInfo> serverFileList = new ArrayList<>();
 
     public CMServerApp() {
         m_serverStub = new CMServerStub();
@@ -44,10 +50,37 @@ public class CMServerApp {
             System.err.println("CM initialization error!");
             return;
         }
+        setFileList();
         startServer();
     }
 
+    private void setFileList(){
+        File serverDir = new File(strFilePath);
+        File[] dirs = serverDir.listFiles();
+
+        for (int i = 0; i < dirs.length; i++) {
+            if (dirs[i].isDirectory()){
+                File[] listFiles = (new File(dirs[i].getPath())).listFiles();
+                for (int j = 0; j < listFiles.length; j++) {
+                    System.out.print("New file detected: \'" + listFiles[j] + "\' - adding to file list\n");
+                    serverFileList.add(new FileInfo(listFiles[j].getName(), getOwnerName(listFiles[j]), 1));
+                    //System.out.print("test: " + listFiles[j].getName() + " " + getOwnerName(listFiles[j]) + "\n");
+                }
+
+            } else {
+                System.out.print("New file detected: \'" + dirs[i] + "\' - adding to file list\n");
+                serverFileList.add(new FileInfo(dirs[i].getName(), null, 1));
+            }
+        }
+    } //TODO: initialize file list
+
+    private String getOwnerName(File file){
+        String[] strFile = file.toString().split("\\\\");
+        return (strFile[strFile.length - 2]);
+    }
+
     public void startServer() {
+        m_serverStub.addBlockDatagramChannel(1);
         System.out.println("Server application starts.");
         BufferedReader br = new BufferedReader(new InputStreamReader(System.in));
         String strInput = null;
@@ -91,7 +124,7 @@ public class CMServerApp {
     }
     private void test()
     {
-        System.out.println(Files.getFileAttributeView(Path.of(".\\1\\hello"), BasicFileAttributeView.class));
+        //CMServerEventHandler.processSyncFileCreated(1, "2", "1");
     }
 
     public void printAllMenus()

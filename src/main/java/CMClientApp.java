@@ -1,4 +1,4 @@
-import kr.ac.konkuk.ccslab.cm.info.CMInfo;
+/*import kr.ac.konkuk.ccslab.cm.info.CMInfo;
 import kr.ac.konkuk.ccslab.cm.manager.CMCommManager;
 import kr.ac.konkuk.ccslab.cm.stub.CMClientStub;
 import javax.swing.*;
@@ -8,11 +8,18 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.nio.file.attribute.BasicFileAttributeView;
+import java.util.ArrayList;
 import java.util.List;
+
+class Pair{
+    String filename;
+    Integer logicalClock;
+    Pair(String filename, Integer logicalClock){
+        this.filename = filename;
+        this.logicalClock = logicalClock;
+    }
+}
 
 public class CMClientApp extends JFrame{
     private static CMClientStub m_clientStub;
@@ -21,6 +28,7 @@ public class CMClientApp extends JFrame{
     private String strFilePath = null;
     public JFrame clientFrame = new JFrame();
     private JTextArea clientConsole = new JTextArea(40, 40);
+    public ArrayList<Pair> clientFileInfo = new ArrayList<>();
     public static final String R = "\u001B[0m";
     public static final String G = "\u001B[32m";
     public static final String Y = "\u001B[33m";
@@ -67,6 +75,11 @@ public class CMClientApp extends JFrame{
 
         JButton syncButton = new JButton("syncFile");
         add(syncButton);
+        syncButton.addActionListener(new ActionListener() {
+            public void actionPerformed(ActionEvent e) {
+                syncFile();
+            }
+        });
 
         JButton shareButton = new JButton("shareFile");
         add(shareButton);
@@ -79,6 +92,69 @@ public class CMClientApp extends JFrame{
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setVisible(true);
     }
+
+    public void loginDS() {
+        clientConsole.append("# Login to default server.\n");
+        JFrame loginFrame = new JFrame();
+        loginFrame.addWindowListener(new WindowAdapter() {
+            public void windowClosing(WindowEvent e) {
+                clientConsole.append("Login failed\n");
+            }
+        });
+
+        loginFrame.setLayout(new FlowLayout(FlowLayout.RIGHT));
+        loginFrame.setTitle("login");
+        loginFrame.setSize(280, 130);
+        loginFrame.setLocationRelativeTo(null);
+        loginFrame.setVisible(true);
+
+        JLabel ID = new JLabel("ID: ");
+        loginFrame.add(ID);
+
+        JTextField IDInput = new JTextField(15);
+        loginFrame.add(IDInput);
+
+        JLabel PW = new JLabel("PASSWORD:");
+        loginFrame.add(PW);
+
+        JTextField PWInput = new JTextField(15);
+        loginFrame.add(PWInput);
+
+        JButton loginButton = new JButton("login");
+        loginFrame.add(loginButton);
+
+        loginButton.addActionListener(new ActionListener() {
+            public void actionPerformed(ActionEvent e) {
+                String userName = IDInput.getText();
+                String password = PWInput.getText();
+                if (m_clientStub.loginCM(userName, password)) {
+                    strFilePath = ".\\client-file-path-" + userName + "\\"; // initial set filepath
+                    m_clientStub.setTransferedFileHome(Paths.get(strFilePath));
+                    setTitle("Client " + userName);
+                    loginFrame.dispose();
+                } else {
+                    clientConsole.append("failed the login request!\n");
+                    loginFrame.dispose();
+                }
+                clientConsole.append("======\n");
+            }
+        });
+
+    }
+
+    public void logoutDS() {
+        if (m_clientStub.getCMInfo().getInteractionInfo().getMyself().getState() != CMInfo.CM_CHAR) {
+            clientConsole.append("Client is not logged in.\n");
+            return;
+        }
+        clientConsole.append("# Logout from default server.\n");
+        if (m_clientStub.logoutCM())
+            clientConsole.append("Successfully sent the logout request.\n");
+        else
+            clientConsole.append("Failed the logout request!\n");
+        clientConsole.append("======\n");
+    }
+
     public void startCM() {
         setGUI();
         List<String> localAddressList = CMCommManager.getLocalIPList();
@@ -196,68 +272,6 @@ public class CMClientApp extends JFrame{
         System.out.println("======");
     }
 
-    public void loginDS() {
-        clientConsole.append("# Login to default server.\n");
-        JFrame loginFrame = new JFrame();
-        loginFrame.addWindowListener(new WindowAdapter() {
-            public void windowClosing(WindowEvent e) {
-                clientConsole.append("Login failed\n");
-            }
-        });
-
-        loginFrame.setLayout(new FlowLayout(FlowLayout.RIGHT));
-        loginFrame.setTitle("login");
-        loginFrame.setSize(280, 130);
-        loginFrame.setLocationRelativeTo(null);
-        loginFrame.setVisible(true);
-
-        JLabel ID = new JLabel("ID: ");
-        loginFrame.add(ID);
-
-        JTextField IDInput = new JTextField(15);
-        loginFrame.add(IDInput);
-
-        JLabel PW = new JLabel("PASSWORD:");
-        loginFrame.add(PW);
-
-        JTextField PWInput = new JTextField(15);
-        loginFrame.add(PWInput);
-
-        JButton loginButton = new JButton("login");
-        loginFrame.add(loginButton);
-
-        loginButton.addActionListener(new ActionListener() {
-            public void actionPerformed(ActionEvent e) {
-                String userName = IDInput.getText();
-                String password = PWInput.getText();
-                if (m_clientStub.loginCM(userName, password)) {
-                    strFilePath = ".\\client-file-path-" + userName + "\\"; // initial set filepath
-                    m_clientStub.setTransferedFileHome(Paths.get(strFilePath));
-                    setTitle("Client " + userName);
-                    loginFrame.dispose();
-                } else {
-                    clientConsole.append("failed the login request!\n");
-                    loginFrame.dispose();
-                }
-                clientConsole.append("======\n");
-            }
-        });
-
-    }
-
-    public void logoutDS() {
-        if (m_clientStub.getCMInfo().getInteractionInfo().getMyself().getState() != CMInfo.CM_CHAR) {
-            clientConsole.append("Client is not logged in.\n");
-            return;
-        }
-        clientConsole.append("# Logout from default server.\n");
-        if (m_clientStub.logoutCM())
-            clientConsole.append("Successfully sent the logout request.\n");
-        else
-            clientConsole.append("Failed the logout request!\n");
-        clientConsole.append("======\n");
-    }
-
     public void newClientFilePath() {
         BufferedReader br = new BufferedReader(new InputStreamReader(System.in));
         System.out.println("#" + G + "set file path.");
@@ -338,4 +352,4 @@ public class CMClientApp extends JFrame{
         cmStub.setAppEventHandler(client.getClientEventHandler());
         client.startCM();
     }
-}
+}*/

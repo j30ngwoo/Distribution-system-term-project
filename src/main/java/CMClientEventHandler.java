@@ -1,3 +1,4 @@
+import kr.ac.konkuk.ccslab.cm.event.CMDummyEvent;
 import kr.ac.konkuk.ccslab.cm.event.CMEvent;
 import kr.ac.konkuk.ccslab.cm.event.CMSessionEvent;
 import kr.ac.konkuk.ccslab.cm.event.handler.CMAppEventHandler;
@@ -18,11 +19,28 @@ public class CMClientEventHandler implements CMAppEventHandler {
     @Override
     public void processEvent(CMEvent cme) {
         switch (cme.getType()) {
+            case CMInfo.CM_DUMMY_EVENT:
+                processDummyEvent(cme);
             case CMInfo.CM_SESSION_EVENT:
                 processSessionEvent(cme);
                 break;
             default:
                 return;
+        }
+    }
+
+    private void processDummyEvent(CMEvent cme) {
+        System.out.println("test: receive dummy event - info: " + ((CMDummyEvent)cme).getDummyInfo());
+        System.out.println("test: id - " + cme.getID());
+        String fileName = ((CMDummyEvent)cme).getDummyInfo();
+        String strTargetFilePath = GUIClientApp.strClientFilePath + fileName;
+        System.out.println("test: file path: " + strTargetFilePath);
+        switch (cme.getID()) {
+            case EventID.FILESYNC_PUSH_REQUEST:
+                m_clientConsole.append("FileSync: \'" + fileName + "\' needs synchronizing. Send file to server.");
+                System.out.println(m_clientStub.pushFile(strTargetFilePath, m_clientStub.getDefaultServerName()));
+            case EventID.FILESYNC_PUSH_REJECT:
+
         }
     }
 
