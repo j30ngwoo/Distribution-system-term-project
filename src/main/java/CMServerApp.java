@@ -7,10 +7,11 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 public class CMServerApp {
     public CMServerStub m_serverStub;
-    private CMServerEventHandler m_eventHandler;
+    private final CMServerEventHandler m_eventHandler;
     public String strFilePath = ".\\server-file-path";
     private boolean m_bRun;
     public static ArrayList<SyncFileInfo> serverSyncFileList = new ArrayList<>();
@@ -31,14 +32,14 @@ public class CMServerApp {
     }
 
     public void startCM() {
-        List<String> localAddressList = null;
+        List<String> localAddressList;
         localAddressList = CMCommManager.getLocalIPList();
         if (localAddressList == null) {
             System.err.println("Local address not found!");
             return;
         }
 
-        System.out.println("my current address: " + localAddressList.get(0).toString());
+        System.out.println("my current address: " + localAddressList.get(0));
         System.out.println("saved server address: " + m_serverStub.getServerAddress());
         System.out.println("saved server port: " + m_serverStub.getServerPort());
 
@@ -48,8 +49,6 @@ public class CMServerApp {
             return;
         }
         setFileList();
-
-
         startServer();
     }
 
@@ -57,33 +56,27 @@ public class CMServerApp {
         File serverDir = new File(strFilePath);
         File[] dirs = serverDir.listFiles();
 
-        for (int i = 0; i < dirs.length; i++) {
-            if (dirs[i].isDirectory()){
-                File[] listFiles = (new File(dirs[i].getPath())).listFiles();
-                for (int j = 0; j < listFiles.length; j++) {
-                    System.out.print("New file detected: \'" + listFiles[j] + "\' - adding to file list\n");
-                    serverSyncFileList.add(new SyncFileInfo(listFiles[j].getName(), 1));
-                    //System.out.print("test: " + listFiles[j].getName() + " " + getOwnerName(listFiles[j]) + "\n");
+        for (File dir : Objects.requireNonNull(dirs)) {
+            if (dir.isDirectory()) {
+                File[] listFiles = (new File(dir.getPath())).listFiles();
+                for (File listFile : Objects.requireNonNull(listFiles)) {
+                    System.out.print("New file detected: '" + listFile + "' - adding to file list\n");
+                    serverSyncFileList.add(new SyncFileInfo(listFile.getName(), 1));
                 }
 
             } else {
-                System.out.print("New file detected: \'" + dirs[i] + "\' - adding to file list\n");
-                serverSyncFileList.add(new SyncFileInfo(dirs[i].getName(), 1));
+                System.out.print("New file detected: '" + dir + "' - adding to file list\n");
+                serverSyncFileList.add(new SyncFileInfo(dir.getName(), 1));
             }
         }
-    } //TODO: initialize file list
-
-    private String getOwnerName(File file){
-        String[] strFile = file.toString().split("\\\\");
-        return (strFile[strFile.length - 2]);
     }
 
     public void startServer() {
         m_serverStub.addBlockDatagramChannel(1);
         System.out.println("Server application starts.");
         BufferedReader br = new BufferedReader(new InputStreamReader(System.in));
-        String strInput = null;
-        int nCommand = -1;
+        String strInput;
+        int nCommand;
 
         while (m_bRun) {
             System.out.println("Type \"0\" for menu.");
@@ -101,18 +94,10 @@ public class CMServerApp {
             }
 
             switch (nCommand) {
-                case 0:
-                    printAllMenus();
-                    break;
-                case 999:
-                    terminateCM();
-                    return;
-                case 1:
-                    test();
-                    break;
-                default:
-                    System.err.println("Unknown command.");
-                    break;
+                case 0 -> printAllMenus();
+                case 9 -> terminateCM();
+                //case 1 -> test();
+                default -> System.err.println("Unknown command.");
             }
         }
 
@@ -121,10 +106,6 @@ public class CMServerApp {
         } catch (IOException e) {
             e.printStackTrace();
         }
-    }
-    private void test()
-    {
-        m_serverStub.requestFile("3", "1");
     }
 
     public void printAllMenus()
